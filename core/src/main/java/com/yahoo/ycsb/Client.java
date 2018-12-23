@@ -34,8 +34,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Turn seconds remaining into more useful units.
- * i.e. if there are hours or days worth of seconds, use them.
+ * Turn seconds remaining into more useful units. i.e. if there are hours or
+ * days worth of seconds, use them.
  */
 final class RemainingFormatter {
   private RemainingFormatter() {
@@ -75,7 +75,7 @@ final class RemainingFormatter {
  */
 public final class Client {
   private Client() {
-    //not used
+    // not used
   }
 
   public static final String DEFAULT_RECORD_COUNT = "0";
@@ -107,8 +107,8 @@ public final class Client {
   public static final String EXPORTER_PROPERTY = "exporter";
 
   /**
-   * If set to the path of a file, YCSB will write all output to this file
-   * instead of STDOUT.
+   * If set to the path of a file, YCSB will write all output to this file instead
+   * of STDOUT.
    */
   public static final String EXPORT_FILE_PROPERTY = "exportfile";
 
@@ -118,9 +118,10 @@ public final class Client {
   public static final String THREAD_COUNT_PROPERTY = "threadcount";
 
   /**
-   * Indicates how many inserts to do if less than recordcount.
-   * Useful for partitioning the load among multiple servers if the client is the bottleneck.
-   * Additionally workloads should support the "insertstart" property which tells them which record to start at.
+   * Indicates how many inserts to do if less than recordcount. Useful for
+   * partitioning the load among multiple servers if the client is the bottleneck.
+   * Additionally workloads should support the "insertstart" property which tells
+   * them which record to start at.
    */
   public static final String INSERT_COUNT_PROPERTY = "insertcount";
 
@@ -169,14 +170,14 @@ public final class Client {
   public static void usageMessage() {
     System.out.println("Usage: java com.yahoo.ycsb.Client [options]");
     System.out.println("Options:");
-    System.out.println("  -threads n: execute using n threads (default: 1) - can also be specified as the \n" +
-        "        \"threadcount\" property using -p");
-    System.out.println("  -target n: attempt to do n operations per second (default: unlimited) - can also\n" +
-        "       be specified as the \"target\" property using -p");
+    System.out.println("  -threads n: execute using n threads (default: 1) - can also be specified as the \n"
+        + "        \"threadcount\" property using -p");
+    System.out.println("  -target n: attempt to do n operations per second (default: unlimited) - can also\n"
+        + "       be specified as the \"target\" property using -p");
     System.out.println("  -load:  run the loading phase of the workload");
     System.out.println("  -t:  run the transactions phase of the workload (default)");
-    System.out.println("  -db dbname: specify the name of the DB to use (default: com.yahoo.ycsb.BasicDB) - \n" +
-        "        can also be specified as the \"db\" property using -p");
+    System.out.println("  -db dbname: specify the name of the DB to use (default: com.yahoo.ycsb.BasicDB) - \n"
+        + "        can also be specified as the \"db\" property using -p");
     System.out.println("  -P propertyfile: load properties from the given file. Multiple files can");
     System.out.println("           be specified, and will be processed in the order specified");
     System.out.println("  -p name=value:  specify a property to be passed to the DB and workloads;");
@@ -186,13 +187,13 @@ public final class Client {
     System.out.println("  -l label:  use label for status (e.g. to label one experiment out of a whole batch)");
     System.out.println("");
     System.out.println("Required properties:");
-    System.out.println("  " + WORKLOAD_PROPERTY + ": the name of the workload class to use (e.g. " +
-        "com.yahoo.ycsb.workloads.CoreWorkload)");
+    System.out.println("  " + WORKLOAD_PROPERTY + ": the name of the workload class to use (e.g. "
+        + "com.yahoo.ycsb.workloads.CoreWorkload)");
     System.out.println("");
     System.out.println("To run the transaction phase from multiple servers, start a separate client on each.");
     System.out.println("To run the load phase from multiple servers, start a separate client on each; additionally,");
-    System.out.println("use the \"insertcount\" and \"insertstart\" properties to divide up the records " +
-        "to be inserted");
+    System.out
+        .println("use the \"insertcount\" and \"insertstart\" properties to divide up the records " + "to be inserted");
   }
 
   public static boolean checkRequiredProperties(Properties props) {
@@ -204,15 +205,14 @@ public final class Client {
     return true;
   }
 
-
   /**
-   * Exports the measurements to either sysout or a file using the exporter
-   * loaded from conf.
+   * Exports the measurements to either sysout or a file using the exporter loaded
+   * from conf.
    *
-   * @throws IOException Either failed to write to output stream or failed to close it.
+   * @throws IOException Either failed to write to output stream or failed to
+   *                     close it.
    */
-  private static void exportMeasurements(Properties props, int opcount, long runtime)
-      throws IOException {
+  private static void exportMeasurements(Properties props, int opcount, long runtime) throws IOException {
     MeasurementsExporter exporter = null;
     try {
       // if no destination file is provided the results will be written to stdout
@@ -231,8 +231,7 @@ public final class Client {
         exporter = (MeasurementsExporter) Class.forName(exporterStr).getConstructor(OutputStream.class)
             .newInstance(out);
       } catch (Exception e) {
-        System.err.println("Could not find exporter " + exporterStr
-            + ", will use default text reporter.");
+        System.err.println("Could not find exporter " + exporterStr + ", will use default text reporter.");
         e.printStackTrace();
         exporter = new TextMeasurementsExporter(out);
       }
@@ -282,12 +281,12 @@ public final class Client {
 
     long maxExecutionTime = Integer.parseInt(props.getProperty(MAX_EXECUTION_TIME, "0"));
 
-    //get number of threads, target and db
+    // get number of threads, target and db
     int threadcount = Integer.parseInt(props.getProperty(THREAD_COUNT_PROPERTY, "1"));
     String dbname = props.getProperty(DB_PROPERTY, "com.yahoo.ycsb.BasicDB");
     int target = Integer.parseInt(props.getProperty(TARGET_PROPERTY, "0"));
 
-    //compute the target throughput
+    // compute the target throughput
     double targetperthreadperms = -1;
     if (target > 0) {
       double targetperthread = ((double) target) / ((double) threadcount);
@@ -308,8 +307,8 @@ public final class Client {
     System.err.println("Starting test.");
     final CountDownLatch completeLatch = new CountDownLatch(threadcount);
 
-    final List<ClientThread> clients = initDb(dbname, props, threadcount, targetperthreadperms,
-        workload, tracer, completeLatch);
+    final List<ClientThread> clients = initDb(dbname, props, threadcount, targetperthreadperms, workload, tracer,
+        completeLatch);
 
     if (status) {
       boolean standardstatus = false;
@@ -317,8 +316,9 @@ public final class Client {
         standardstatus = true;
       }
       int statusIntervalSeconds = Integer.parseInt(props.getProperty("status.interval", "10"));
-      boolean trackJVMStats = props.getProperty(Measurements.MEASUREMENT_TRACK_JVM_PROPERTY,
-          Measurements.MEASUREMENT_TRACK_JVM_PROPERTY_DEFAULT).equals("true");
+      boolean trackJVMStats = props
+          .getProperty(Measurements.MEASUREMENT_TRACK_JVM_PROPERTY, Measurements.MEASUREMENT_TRACK_JVM_PROPERTY_DEFAULT)
+          .equals("true");
       statusthread = new StatusThread(completeLatch, clients, label, standardstatus, statusIntervalSeconds,
           trackJVMStats);
       statusthread.start();
@@ -371,7 +371,8 @@ public final class Client {
         if (status) {
           // wake up status thread if it's asleep
           statusthread.interrupt();
-          // at this point we assume all the monitored threads are already gone as per above join loop.
+          // at this point we assume all the monitored threads are already gone as per
+          // above join loop.
           try {
             statusthread.join();
           } catch (InterruptedException ignored) {
@@ -401,8 +402,7 @@ public final class Client {
   }
 
   private static List<ClientThread> initDb(String dbname, Properties props, int threadcount,
-                                           double targetperthreadperms, Workload workload, Tracer tracer,
-                                           CountDownLatch completeLatch) {
+      double targetperthreadperms, Workload workload, Tracer tracer, CountDownLatch completeLatch) {
     boolean initFailed = false;
     boolean dotransactions = Boolean.valueOf(props.getProperty(DO_TRANSACTIONS_PROPERTY, String.valueOf(true)));
 
@@ -431,7 +431,8 @@ public final class Client {
 
         int threadopcount = opcount / threadcount;
 
-        // ensure correct number of operations, in case opcount is not a multiple of threadcount
+        // ensure correct number of operations, in case opcount is not a multiple of
+        // threadcount
         if (threadid < opcount % threadcount) {
           ++threadopcount;
         }
@@ -452,8 +453,7 @@ public final class Client {
   }
 
   private static Tracer getTracer(Properties props, Workload workload) {
-    return new Tracer.Builder("YCSB " + workload.getClass().getSimpleName())
-        .conf(getHTraceConfiguration(props))
+    return new Tracer.Builder("YCSB " + workload.getClass().getSimpleName()).conf(getHTraceConfiguration(props))
         .build();
   }
 
@@ -481,9 +481,10 @@ public final class Client {
   }
 
   private static Thread setupWarningThread() {
-    //show a warning message that creating the workload is taking a while
-    //but only do so if it is taking longer than 2 seconds
-    //(showing the message right away if the setup wasn't taking very long was confusing people)
+    // show a warning message that creating the workload is taking a while
+    // but only do so if it is taking longer than 2 seconds
+    // (showing the message right away if the setup wasn't taking very long was
+    // confusing people)
     return new Thread() {
       @Override
       public void run() {
@@ -607,7 +608,8 @@ public final class Client {
           System.exit(0);
         }
 
-        //Issue #5 - remove call to stringPropertyNames to make compilable under Java 1.5
+        // Issue #5 - remove call to stringPropertyNames to make compilable under Java
+        // 1.5
         for (Enumeration e = myfileprops.propertyNames(); e.hasMoreElements();) {
           String prop = (String) e.nextElement();
 
@@ -649,15 +651,16 @@ public final class Client {
         System.out.println("An argument value without corresponding argument specifier (e.g., -p, -s) was found. "
             + "We expected an argument specifier and instead found " + args[argindex]);
       } else {
-        System.out.println("An argument specifier without corresponding value was found at the end of the supplied " +
-            "command line arguments.");
+        System.out.println("An argument specifier without corresponding value was found at the end of the supplied "
+            + "command line arguments.");
       }
       System.exit(0);
     }
 
-    //overwrite file properties with properties from the command line
+    // overwrite file properties with properties from the command line
 
-    //Issue #5 - remove call to stringPropertyNames to make compilable under Java 1.5
+    // Issue #5 - remove call to stringPropertyNames to make compilable under Java
+    // 1.5
     for (Enumeration e = props.propertyNames(); e.hasMoreElements();) {
       String prop = (String) e.nextElement();
 

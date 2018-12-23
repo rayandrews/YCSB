@@ -1,37 +1,36 @@
 /**
  * Copyright (c) 2013-2015 YCSB contributors. All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not
- * use this file except in compliance with the License. You may obtain a copy of
- * the License at
+ * <p>Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file
+ * except in compliance with the License. You may obtain a copy of the License at
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>http://www.apache.org/licenses/LICENSE-2.0
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- * WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
- * License for the specific language governing permissions and limitations under
- * the License. See accompanying LICENSE file.
+ * <p>Unless required by applicable law or agreed to in writing, software distributed under the
+ * License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+ * express or implied. See the License for the specific language governing permissions and
+ * limitations under the License. See accompanying LICENSE file.
  *
- * Submitted by Chrisjan Matser on 10/11/2010.
+ * <p>Submitted by Chrisjan Matser on 10/11/2010.
  */
 package com.yahoo.ycsb.db;
 
+import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.ColumnDefinitions;
 import com.datastax.driver.core.ConsistencyLevel;
 import com.datastax.driver.core.Host;
 import com.datastax.driver.core.HostDistance;
 import com.datastax.driver.core.Metadata;
+import com.datastax.driver.core.PreparedStatement;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
 import com.datastax.driver.core.Session;
-import com.datastax.driver.core.PreparedStatement;
-import com.datastax.driver.core.BoundStatement;
 import com.datastax.driver.core.querybuilder.Insert;
 import com.datastax.driver.core.querybuilder.QueryBuilder;
 import com.datastax.driver.core.querybuilder.Select;
 import com.datastax.driver.core.querybuilder.Update;
+
 import com.yahoo.ycsb.ByteArrayByteIterator;
 import com.yahoo.ycsb.ByteIterator;
 import com.yahoo.ycsb.DB;
@@ -44,10 +43,14 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.Vector;
+
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.LockSupport;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,6 +59,7 @@ import org.slf4j.helpers.MessageFormatter;
 /**
  * Cassandra 2.x CQL client.
  *
+ * <p>
  * See {@code cassandra2/README.md} for details.
  *
  * @author cmatser
@@ -67,20 +71,13 @@ public class CassandraCQLClient extends DB {
   private static Cluster cluster = null;
   private static Session session = null;
 
-  private static ConcurrentMap<Set<String>, PreparedStatement> readStmts =
-      new ConcurrentHashMap<Set<String>, PreparedStatement>();
-  private static ConcurrentMap<Set<String>, PreparedStatement> scanStmts =
-      new ConcurrentHashMap<Set<String>, PreparedStatement>();
-  private static ConcurrentMap<Set<String>, PreparedStatement> insertStmts =
-      new ConcurrentHashMap<Set<String>, PreparedStatement>();
-  private static ConcurrentMap<Set<String>, PreparedStatement> updateStmts =
-      new ConcurrentHashMap<Set<String>, PreparedStatement>();
-  private static AtomicReference<PreparedStatement> readAllStmt =
-      new AtomicReference<PreparedStatement>();
-  private static AtomicReference<PreparedStatement> scanAllStmt =
-      new AtomicReference<PreparedStatement>();
-  private static AtomicReference<PreparedStatement> deleteStmt =
-      new AtomicReference<PreparedStatement>();
+  private static ConcurrentMap<Set<String>, PreparedStatement> readStmts = new ConcurrentHashMap<Set<String>, PreparedStatement>();
+  private static ConcurrentMap<Set<String>, PreparedStatement> scanStmts = new ConcurrentHashMap<Set<String>, PreparedStatement>();
+  private static ConcurrentMap<Set<String>, PreparedStatement> insertStmts = new ConcurrentHashMap<Set<String>, PreparedStatement>();
+  private static ConcurrentMap<Set<String>, PreparedStatement> updateStmts = new ConcurrentHashMap<Set<String>, PreparedStatement>();
+  private static AtomicReference<PreparedStatement> readAllStmt = new AtomicReference<PreparedStatement>();
+  private static AtomicReference<PreparedStatement> scanAllStmt = new AtomicReference<PreparedStatement>();
+  private static AtomicReference<PreparedStatement> deleteStmt = new AtomicReference<PreparedStatement>();
 
   private static ConsistencyLevel readConsistencyLevel = ConsistencyLevel.ONE;
   private static ConsistencyLevel writeConsistencyLevel = ConsistencyLevel.ONE;
@@ -91,29 +88,35 @@ public class CassandraCQLClient extends DB {
   public static final String USERNAME_PROPERTY = "cassandra.username";
   public static final String PASSWORD_PROPERTY = "cassandra.password";
 
+  public static final String SIMULATE_DELAY = "cassandra.simulatedelay";
+  public static final String SIMULATE_DELAY_DEFAULT = "0";
+
+  public static final String RANDOMIZE_DELAY = "cassandra.randomizedelay";
+  public static final String RANDOMIZE_DELAY_DEFAULT = "true";
+
+  public static final String PARTITION_DELAY = "cassandra.partitiondelay";
+  public static final String PARTITION_DELAY_DEFAULT = "1.0";
+
+  public static final String RECORD_COUNT_PROPERTY = "recordcount";
+  public static final String RECORD_COUNT_DEFAULT = "0";
+
   public static final String HOSTS_PROPERTY = "hosts";
   public static final String PORT_PROPERTY = "port";
   public static final String PORT_PROPERTY_DEFAULT = "9042";
 
-  public static final String READ_CONSISTENCY_LEVEL_PROPERTY =
-      "cassandra.readconsistencylevel";
+  public static final String READ_CONSISTENCY_LEVEL_PROPERTY = "cassandra.readconsistencylevel";
   public static final String READ_CONSISTENCY_LEVEL_PROPERTY_DEFAULT = "ONE";
-  public static final String WRITE_CONSISTENCY_LEVEL_PROPERTY =
-      "cassandra.writeconsistencylevel";
+  public static final String WRITE_CONSISTENCY_LEVEL_PROPERTY = "cassandra.writeconsistencylevel";
   public static final String WRITE_CONSISTENCY_LEVEL_PROPERTY_DEFAULT = "ONE";
 
-  public static final String MAX_CONNECTIONS_PROPERTY =
-      "cassandra.maxconnections";
-  public static final String CORE_CONNECTIONS_PROPERTY =
-      "cassandra.coreconnections";
-  public static final String CONNECT_TIMEOUT_MILLIS_PROPERTY =
-      "cassandra.connecttimeoutmillis";
-  public static final String READ_TIMEOUT_MILLIS_PROPERTY =
-      "cassandra.readtimeoutmillis";
+  public static final String MAX_CONNECTIONS_PROPERTY = "cassandra.maxconnections";
+  public static final String CORE_CONNECTIONS_PROPERTY = "cassandra.coreconnections";
+  public static final String CONNECT_TIMEOUT_MILLIS_PROPERTY = "cassandra.connecttimeoutmillis";
+  public static final String READ_TIMEOUT_MILLIS_PROPERTY = "cassandra.readtimeoutmillis";
 
   public static final String TRACING_PROPERTY = "cassandra.tracing";
   public static final String TRACING_PROPERTY_DEFAULT = "false";
-  
+
   /**
    * Count the number of times initialized to teardown on the last
    * {@link #cleanup()}.
@@ -123,13 +126,48 @@ public class CassandraCQLClient extends DB {
   private static boolean debug = false;
 
   private static boolean trace = false;
-  
+
+  protected boolean randomizeDelay;
+  protected int toDelay;
+  protected int opCount;
+  protected float partition;
+  protected int partitionSize;
+
+  public CassandraCQLClient() {
+    toDelay = 0;
+  }
+
+  protected void delay() {
+    if (toDelay > 0) {
+      long delayNs;
+      if (randomizeDelay) {
+        delayNs = TimeUnit.MILLISECONDS.toNanos(ThreadLocalRandom.current().nextInt(toDelay));
+        if (delayNs == 0) {
+          return;
+        }
+      } else {
+        delayNs = TimeUnit.MILLISECONDS.toNanos(toDelay);
+      }
+
+      final long deadline = System.nanoTime() + delayNs;
+      do {
+        LockSupport.parkNanos(deadline - System.nanoTime());
+      } while (System.nanoTime() < deadline && !Thread.interrupted());
+    }
+  }
+
   /**
    * Initialize any state for this DB. Called once per DB instance; there is one
    * DB instance per client thread.
    */
   @Override
   public void init() throws DBException {
+    toDelay = Integer.parseInt(getProperties().getProperty(SIMULATE_DELAY, SIMULATE_DELAY_DEFAULT));
+    randomizeDelay = Boolean.parseBoolean(getProperties().getProperty(RANDOMIZE_DELAY, RANDOMIZE_DELAY_DEFAULT));
+    opCount = Integer.parseInt(getProperties().getProperty(RECORD_COUNT_PROPERTY, RECORD_COUNT_DEFAULT));
+    partition = Float.parseFloat(getProperties().getProperty(PARTITION_DELAY, PARTITION_DELAY_DEFAULT));
+
+    partitionSize = (int) Math.round(partition * opCount);
 
     // Keep track of number of calls to init (for later cleanup)
     INIT_COUNT.incrementAndGet();
@@ -144,16 +182,13 @@ public class CassandraCQLClient extends DB {
       }
 
       try {
-
-        debug =
-            Boolean.parseBoolean(getProperties().getProperty("debug", "false"));
+        debug = Boolean.parseBoolean(getProperties().getProperty("debug", "false"));
         trace = Boolean.valueOf(getProperties().getProperty(TRACING_PROPERTY, TRACING_PROPERTY_DEFAULT));
-        
+
         String host = getProperties().getProperty(HOSTS_PROPERTY);
         if (host == null) {
-          throw new DBException(String.format(
-              "Required property \"%s\" missing for CassandraCQLClient",
-              HOSTS_PROPERTY));
+          throw new DBException(
+              String.format("Required property \"%s\" missing for CassandraCQLClient", HOSTS_PROPERTY));
         }
         String[] hosts = host.split(",");
         String port = getProperties().getProperty(PORT_PROPERTY, PORT_PROPERTY_DEFAULT);
@@ -161,62 +196,48 @@ public class CassandraCQLClient extends DB {
         String username = getProperties().getProperty(USERNAME_PROPERTY);
         String password = getProperties().getProperty(PASSWORD_PROPERTY);
 
-        String keyspace = getProperties().getProperty(KEYSPACE_PROPERTY,
-            KEYSPACE_PROPERTY_DEFAULT);
+        String keyspace = getProperties().getProperty(KEYSPACE_PROPERTY, KEYSPACE_PROPERTY_DEFAULT);
 
         readConsistencyLevel = ConsistencyLevel.valueOf(
-            getProperties().getProperty(READ_CONSISTENCY_LEVEL_PROPERTY,
-                READ_CONSISTENCY_LEVEL_PROPERTY_DEFAULT));
+            getProperties().getProperty(READ_CONSISTENCY_LEVEL_PROPERTY, READ_CONSISTENCY_LEVEL_PROPERTY_DEFAULT));
         writeConsistencyLevel = ConsistencyLevel.valueOf(
-            getProperties().getProperty(WRITE_CONSISTENCY_LEVEL_PROPERTY,
-                WRITE_CONSISTENCY_LEVEL_PROPERTY_DEFAULT));
+            getProperties().getProperty(WRITE_CONSISTENCY_LEVEL_PROPERTY, WRITE_CONSISTENCY_LEVEL_PROPERTY_DEFAULT));
 
         if ((username != null) && !username.isEmpty()) {
-          cluster = Cluster.builder().withCredentials(username, password)
-              .withPort(Integer.valueOf(port)).addContactPoints(hosts).build();
-        } else {
-          cluster = Cluster.builder().withPort(Integer.valueOf(port))
+          cluster = Cluster.builder().withCredentials(username, password).withPort(Integer.valueOf(port))
               .addContactPoints(hosts).build();
+        } else {
+          cluster = Cluster.builder().withPort(Integer.valueOf(port)).addContactPoints(hosts).build();
         }
 
-        String maxConnections = getProperties().getProperty(
-            MAX_CONNECTIONS_PROPERTY);
+        String maxConnections = getProperties().getProperty(MAX_CONNECTIONS_PROPERTY);
         if (maxConnections != null) {
-          cluster.getConfiguration().getPoolingOptions()
-              .setMaxConnectionsPerHost(HostDistance.LOCAL,
+          cluster.getConfiguration().getPoolingOptions().setMaxConnectionsPerHost(HostDistance.LOCAL,
               Integer.valueOf(maxConnections));
         }
 
-        String coreConnections = getProperties().getProperty(
-            CORE_CONNECTIONS_PROPERTY);
+        String coreConnections = getProperties().getProperty(CORE_CONNECTIONS_PROPERTY);
         if (coreConnections != null) {
-          cluster.getConfiguration().getPoolingOptions()
-              .setCoreConnectionsPerHost(HostDistance.LOCAL,
+          cluster.getConfiguration().getPoolingOptions().setCoreConnectionsPerHost(HostDistance.LOCAL,
               Integer.valueOf(coreConnections));
         }
 
-        String connectTimoutMillis = getProperties().getProperty(
-            CONNECT_TIMEOUT_MILLIS_PROPERTY);
+        String connectTimoutMillis = getProperties().getProperty(CONNECT_TIMEOUT_MILLIS_PROPERTY);
         if (connectTimoutMillis != null) {
-          cluster.getConfiguration().getSocketOptions()
-              .setConnectTimeoutMillis(Integer.valueOf(connectTimoutMillis));
+          cluster.getConfiguration().getSocketOptions().setConnectTimeoutMillis(Integer.valueOf(connectTimoutMillis));
         }
 
-        String readTimoutMillis = getProperties().getProperty(
-            READ_TIMEOUT_MILLIS_PROPERTY);
+        String readTimoutMillis = getProperties().getProperty(READ_TIMEOUT_MILLIS_PROPERTY);
         if (readTimoutMillis != null) {
-          cluster.getConfiguration().getSocketOptions()
-              .setReadTimeoutMillis(Integer.valueOf(readTimoutMillis));
+          cluster.getConfiguration().getSocketOptions().setReadTimeoutMillis(Integer.valueOf(readTimoutMillis));
         }
 
         Metadata metadata = cluster.getMetadata();
-        logger.info("Connected to cluster: {}\n",
-            metadata.getClusterName());
+        logger.info("Connected to cluster: {}\n", metadata.getClusterName());
 
         for (Host discoveredHost : metadata.getAllHosts()) {
-          logger.info("Datacenter: {}; Host: {}; Rack: {}\n",
-              discoveredHost.getDatacenter(), discoveredHost.getAddress(),
-              discoveredHost.getRack());
+          logger.info("Datacenter: {}; Host: {}; Rack: {}\n", discoveredHost.getDatacenter(),
+              discoveredHost.getAddress(), discoveredHost.getRack());
         }
 
         session = cluster.connect(keyspace);
@@ -250,8 +271,7 @@ public class CassandraCQLClient extends DB {
       }
       if (curInitCount < 0) {
         // This should never happen.
-        throw new DBException(
-            String.format("initCount is negative: %d", curInitCount));
+        throw new DBException(String.format("initCount is negative: %d", curInitCount));
       }
     }
   }
@@ -260,19 +280,19 @@ public class CassandraCQLClient extends DB {
    * Read a record from the database. Each field/value pair from the result will
    * be stored in a HashMap.
    *
-   * @param table
-   *          The name of the table
-   * @param key
-   *          The record key of the record to read.
-   * @param fields
-   *          The list of fields to read, or null for all of them
-   * @param result
-   *          A HashMap of field/value pairs for the result
+   * @param table  The name of the table
+   * @param key    The record key of the record to read.
+   * @param fields The list of fields to read, or null for all of them
+   * @param result A HashMap of field/value pairs for the result
    * @return Zero on success, a non-zero error code on error
    */
   @Override
-  public Status read(String table, String key, Set<String> fields,
-      Map<String, ByteIterator> result) {
+  public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
+
+    if (INIT_COUNT.get() <= partitionSize) {
+      delay();
+    }
+
     try {
       PreparedStatement stmt = (fields == null) ? readAllStmt.get() : readStmts.get(fields);
 
@@ -289,17 +309,15 @@ public class CassandraCQLClient extends DB {
           }
         }
 
-        stmt = session.prepare(selectBuilder.from(table)
-                               .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker()))
-                               .limit(1));
+        stmt = session
+            .prepare(selectBuilder.from(table).where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker())).limit(1));
         stmt.setConsistencyLevel(readConsistencyLevel);
         if (trace) {
           stmt.enableTracing();
         }
 
-        PreparedStatement prevStmt = (fields == null) ?
-                                     readAllStmt.getAndSet(stmt) :
-                                     readStmts.putIfAbsent(new HashSet(fields), stmt);
+        PreparedStatement prevStmt = (fields == null) ? readAllStmt.getAndSet(stmt)
+            : readStmts.putIfAbsent(new HashSet(fields), stmt);
         if (prevStmt != null) {
           stmt = prevStmt;
         }
@@ -333,32 +351,27 @@ public class CassandraCQLClient extends DB {
       logger.error(MessageFormatter.format("Error reading key: {}", key).getMessage(), e);
       return Status.ERROR;
     }
-
   }
 
   /**
    * Perform a range scan for a set of records in the database. Each field/value
    * pair from the result will be stored in a HashMap.
    *
+   * <p>
    * Cassandra CQL uses "token" method for range scan which doesn't always yield
    * intuitive results.
    *
-   * @param table
-   *          The name of the table
-   * @param startkey
-   *          The record key of the first record to read.
-   * @param recordcount
-   *          The number of records to read
-   * @param fields
-   *          The list of fields to read, or null for all of them
-   * @param result
-   *          A Vector of HashMaps, where each HashMap is a set field/value
-   *          pairs for one record
+   * @param table       The name of the table
+   * @param startkey    The record key of the first record to read.
+   * @param recordcount The number of records to read
+   * @param fields      The list of fields to read, or null for all of them
+   * @param result      A Vector of HashMaps, where each HashMap is a set
+   *                    field/value pairs for one record
    * @return Zero on success, a non-zero error code on error
    */
   @Override
-  public Status scan(String table, String startkey, int recordcount,
-      Set<String> fields, Vector<HashMap<String, ByteIterator>> result) {
+  public Status scan(String table, String startkey, int recordcount, Set<String> fields,
+      Vector<HashMap<String, ByteIterator>> result) {
 
     try {
       PreparedStatement stmt = (fields == null) ? scanAllStmt.get() : scanStmts.get(fields);
@@ -398,9 +411,8 @@ public class CassandraCQLClient extends DB {
           stmt.enableTracing();
         }
 
-        PreparedStatement prevStmt = (fields == null) ?
-                                     scanAllStmt.getAndSet(stmt) :
-                                     scanStmts.putIfAbsent(new HashSet(fields), stmt);
+        PreparedStatement prevStmt = (fields == null) ? scanAllStmt.getAndSet(stmt)
+            : scanStmts.putIfAbsent(new HashSet(fields), stmt);
         if (prevStmt != null) {
           stmt = prevStmt;
         }
@@ -433,24 +445,19 @@ public class CassandraCQLClient extends DB {
       return Status.OK;
 
     } catch (Exception e) {
-      logger.error(
-          MessageFormatter.format("Error scanning with startkey: {}", startkey).getMessage(), e);
+      logger.error(MessageFormatter.format("Error scanning with startkey: {}", startkey).getMessage(), e);
       return Status.ERROR;
     }
-
   }
 
   /**
    * Update a record in the database. Any field/value pairs in the specified
-   * values HashMap will be written into the record with the specified record
-   * key, overwriting any existing values with the same field name.
+   * values HashMap will be written into the record with the specified record key,
+   * overwriting any existing values with the same field name.
    *
-   * @param table
-   *          The name of the table
-   * @param key
-   *          The record key of the record to write.
-   * @param values
-   *          A HashMap of field/value pairs to update in the record
+   * @param table  The name of the table
+   * @param key    The record key of the record to write.
+   * @param values A HashMap of field/value pairs to update in the record
    * @return Zero on success, a non-zero error code on error
    */
   @Override
@@ -514,15 +521,11 @@ public class CassandraCQLClient extends DB {
 
   /**
    * Insert a record in the database. Any field/value pairs in the specified
-   * values HashMap will be written into the record with the specified record
-   * key.
+   * values HashMap will be written into the record with the specified record key.
    *
-   * @param table
-   *          The name of the table
-   * @param key
-   *          The record key of the record to insert.
-   * @param values
-   *          A HashMap of field/value pairs to insert in the record
+   * @param table  The name of the table
+   * @param key    The record key of the record to insert.
+   * @param values A HashMap of field/value pairs to insert in the record
    * @return Zero on success, a non-zero error code on error
    */
   @Override
@@ -586,10 +589,8 @@ public class CassandraCQLClient extends DB {
   /**
    * Delete a record from the database.
    *
-   * @param table
-   *          The name of the table
-   * @param key
-   *          The record key of the record to delete.
+   * @param table The name of the table
+   * @param key   The record key of the record to delete.
    * @return Zero on success, a non-zero error code on error
    */
   @Override
@@ -600,8 +601,8 @@ public class CassandraCQLClient extends DB {
 
       // Prepare statement on demand
       if (stmt == null) {
-        stmt = session.prepare(QueryBuilder.delete().from(table)
-                               .where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker())));
+        stmt = session
+            .prepare(QueryBuilder.delete().from(table).where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker())));
         stmt.setConsistencyLevel(writeConsistencyLevel);
         if (trace) {
           stmt.enableTracing();
@@ -625,5 +626,4 @@ public class CassandraCQLClient extends DB {
 
     return Status.ERROR;
   }
-
 }

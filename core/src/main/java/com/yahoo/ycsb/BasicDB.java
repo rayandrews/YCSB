@@ -30,7 +30,7 @@ import java.util.concurrent.locks.LockSupport;
 public class BasicDB extends DB {
   public static final String COUNT = "basicdb.count";
   public static final String COUNT_DEFAULT = "false";
-  
+
   public static final String VERBOSE = "basicdb.verbose";
   public static final String VERBOSE_DEFAULT = "true";
 
@@ -47,7 +47,7 @@ public class BasicDB extends DB {
   protected static Map<Integer, Integer> updates;
   protected static Map<Integer, Integer> inserts;
   protected static Map<Integer, Integer> deletes;
-  
+
   protected boolean verbose;
   protected boolean randomizedelay;
   protected int todelay;
@@ -98,7 +98,7 @@ public class BasicDB extends DB {
         System.out.println("**********************************************");
       }
     }
-    
+
     synchronized (MUTEX) {
       if (counter == 0 && count) {
         reads = new HashMap<Integer, Integer>();
@@ -154,7 +154,7 @@ public class BasicDB extends DB {
     if (count) {
       incCounter(reads, hash(table, key, fields));
     }
-    
+
     return Status.OK;
   }
 
@@ -187,7 +187,7 @@ public class BasicDB extends DB {
       sb.append("]");
       System.out.println(sb);
     }
-    
+
     if (count) {
       incCounter(scans, hash(table, startkey, fields));
     }
@@ -222,7 +222,7 @@ public class BasicDB extends DB {
     if (count) {
       incCounter(updates, hash(table, key, values));
     }
-    
+
     return Status.OK;
   }
 
@@ -254,7 +254,7 @@ public class BasicDB extends DB {
     if (count) {
       incCounter(inserts, hash(table, key, values));
     }
-    
+
     return Status.OK;
   }
 
@@ -278,7 +278,7 @@ public class BasicDB extends DB {
     if (count) {
       incCounter(deletes, (table + key).hashCode());
     }
-    
+
     return Status.OK;
   }
 
@@ -287,7 +287,7 @@ public class BasicDB extends DB {
     synchronized (MUTEX) {
       int countDown = --counter;
       if (count && countDown < 1) {
-        // TODO - would be nice to call something like: 
+        // TODO - would be nice to call something like:
         // Measurements.getMeasurements().oneOffMeasurement("READS", "Uniques", reads.size());
         System.out.println("[READS], Uniques, " + reads.size());
         System.out.println("[SCANS], Uniques, " + scans.size());
@@ -297,7 +297,7 @@ public class BasicDB extends DB {
       }
     }
   }
-  
+
   /**
    * Increments the count on the hash in the map.
    * @param map A non-null map to sync and use for incrementing.
@@ -313,7 +313,7 @@ public class BasicDB extends DB {
       }
     }
   }
-  
+
   /**
    * Hashes the table, key and fields, sorting the fields first for a consistent
    * hash.
@@ -336,7 +336,7 @@ public class BasicDB extends DB {
     }
     return buf.toString().hashCode();
   }
-  
+
   /**
    * Hashes the table, key and fields, sorting the fields first for a consistent
    * hash.
@@ -351,9 +351,9 @@ public class BasicDB extends DB {
     if (values == null) {
       return (table + key).hashCode();
     }
-    final TreeMap<String, ByteIterator> sorted = 
+    final TreeMap<String, ByteIterator> sorted =
         new TreeMap<String, ByteIterator>(values);
-    
+
     StringBuilder buf = getStringBuilder().append(table).append(key);
     for (final Entry<String, ByteIterator> entry : sorted.entrySet()) {
       entry.getValue().reset();
@@ -362,7 +362,7 @@ public class BasicDB extends DB {
     }
     return buf.toString().hashCode();
   }
-  
+
   /**
    * Short test of BasicDB
    */
