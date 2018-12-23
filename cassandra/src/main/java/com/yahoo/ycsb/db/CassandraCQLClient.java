@@ -122,6 +122,7 @@ public class CassandraCQLClient extends DB {
    * {@link #cleanup()}.
    */
   private static final AtomicInteger INIT_COUNT = new AtomicInteger(0);
+  private static final AtomicInteger READ_COUNT = new AtomicInteger(0);
 
   private static boolean debug = false;
 
@@ -131,7 +132,7 @@ public class CassandraCQLClient extends DB {
   protected int toDelay;
   protected int opCount;
   protected float partition;
-  protected int partitionSize;
+  protected int partitionDelaySize;
 
   public CassandraCQLClient() {
     toDelay = 0;
@@ -151,9 +152,7 @@ public class CassandraCQLClient extends DB {
 
       final long deadline = System.nanoTime() + delayNs;
       do {
-        final long counter = deadline - System.nanoTime();
-        System.out.println(System.nanoTime() + " " + deadline + " " + counter);
-        LockSupport.parkNanos(counter);
+        LockSupport.parkNanos(deadline - System.nanoTime());
       } while (System.nanoTime() < deadline && !Thread.interrupted());
     }
   }
@@ -168,13 +167,15 @@ public class CassandraCQLClient extends DB {
     randomizeDelay = Boolean.parseBoolean(getProperties().getProperty(RANDOMIZE_DELAY, RANDOMIZE_DELAY_DEFAULT));
     opCount = Integer.parseInt(getProperties().getProperty(RECORD_COUNT_PROPERTY, RECORD_COUNT_DEFAULT));
     partition = Float.parseFloat(getProperties().getProperty(PARTITION_DELAY, PARTITION_DELAY_DEFAULT));
+    partitionDelaySize = (int) Math.round(partition * opCount);
 
-    partitionSize = (int) Math.round(partition * opCount);
-
-    System.out.println("toDelay : " + toDelay);
-    System.out.println("randomizeDelay : " + randomizeDelay);
-    System.out.println("opCount " + opCount);
-    System.out.println("partition " + partition);
+    System.out.println("Initialize DB and Properties");
+    System.out.println("delay              : " + toDelay + " microseconds");
+    System.out.println("randomizeDelay     : " + randomizeDelay);
+    System.out.println("total operations   : " + opCount);
+    System.out.println("delay partition    : " + partition);
+    System.out.println("delayed operations : " + partitionDelaySize);
+    System.out.println("End of initialization");
 
     // Keep track of number of calls to init (for later cleanup)
     INIT_COUNT.incrementAndGet();
@@ -295,73 +296,77 @@ public class CassandraCQLClient extends DB {
    */
   @Override
   public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
+    // Keep track of number of read request to init (for delay partition)
+    READ_COUNT.incrementAndGet();
 
-    System.out.println("Request no : " + INIT_COUNT.get());
-    if (INIT_COUNT.get() <= partitionSize) {
-      System.out.println("Will be delayed about " + toDelay + " nanoseconds");
-      delay();
-      System.out.println("Request has been delayed!");
-    } else {
-      System.out.println("No delay for this request");
-    }
+    synchronized (READ_COUNT) {
+      System.out.println("Request no : " + READ_COUNT.get());
+      if (READ_COUNT.get() <= partitionDelaySize) {
+        System.out.println("Will be delayed about " + toDelay + " microseconds");
+        delay();
+        System.out.println("Request has been successfully delayed!");
+      } else {
+        System.out.println("No delay for this request");
+      }
 
-    try {
-      PreparedStatement stmt = (fields == null) ? readAllStmt.get() : readStmts.get(fields);
+      try {
+        PreparedStatement stmt = (fields == null) ? readAllStmt.get() : readStmts.get(fields);
 
-      // Prepare statement on demand
-      if (stmt == null) {
-        Select.Builder selectBuilder;
+        // Prepare statement on demand
+        if (stmt == null) {
+          Select.Builder selectBuilder;
 
-        if (fields == null) {
-          selectBuilder = QueryBuilder.select().all();
-        } else {
-          selectBuilder = QueryBuilder.select();
-          for (String col : fields) {
-            ((Select.Selection) selectBuilder).column(col);
+          if (fields == null) {
+            selectBuilder = QueryBuilder.select().all();
+          } else {
+            selectBuilder = QueryBuilder.select();
+            for (String col : fields) {
+              ((Select.Selection) selectBuilder).column(col);
+            }
+          }
+
+          stmt = session
+              .prepare(selectBuilder.from(table).where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker())).limit(1));
+          stmt.setConsistencyLevel(readConsistencyLevel);
+          if (trace) {
+            stmt.enableTracing();
+          }
+
+          PreparedStatement prevStmt = (fields == null) ? readAllStmt.getAndSet(stmt)
+              : readStmts.putIfAbsent(new HashSet(fields), stmt);
+          if (prevStmt != null) {
+            stmt = prevStmt;
           }
         }
 
-        stmt = session
-            .prepare(selectBuilder.from(table).where(QueryBuilder.eq(YCSB_KEY, QueryBuilder.bindMarker())).limit(1));
-        stmt.setConsistencyLevel(readConsistencyLevel);
-        if (trace) {
-          stmt.enableTracing();
+        logger.debug(stmt.getQueryString());
+        logger.debug("key = {}", key);
+
+        ResultSet rs = session.execute(stmt.bind(key));
+
+        if (rs.isExhausted()) {
+          return Status.NOT_FOUND;
         }
 
-        PreparedStatement prevStmt = (fields == null) ? readAllStmt.getAndSet(stmt)
-            : readStmts.putIfAbsent(new HashSet(fields), stmt);
-        if (prevStmt != null) {
-          stmt = prevStmt;
+        // Should be only 1 row
+        Row row = rs.one();
+        ColumnDefinitions cd = row.getColumnDefinitions();
+
+        for (ColumnDefinitions.Definition def : cd) {
+          ByteBuffer val = row.getBytesUnsafe(def.getName());
+          if (val != null) {
+            result.put(def.getName(), new ByteArrayByteIterator(val.array()));
+          } else {
+            result.put(def.getName(), null);
+          }
         }
+
+        return Status.OK;
+
+      } catch (Exception e) {
+        logger.error(MessageFormatter.format("Error reading key: {}", key).getMessage(), e);
+        return Status.ERROR;
       }
-
-      logger.debug(stmt.getQueryString());
-      logger.debug("key = {}", key);
-
-      ResultSet rs = session.execute(stmt.bind(key));
-
-      if (rs.isExhausted()) {
-        return Status.NOT_FOUND;
-      }
-
-      // Should be only 1 row
-      Row row = rs.one();
-      ColumnDefinitions cd = row.getColumnDefinitions();
-
-      for (ColumnDefinitions.Definition def : cd) {
-        ByteBuffer val = row.getBytesUnsafe(def.getName());
-        if (val != null) {
-          result.put(def.getName(), new ByteArrayByteIterator(val.array()));
-        } else {
-          result.put(def.getName(), null);
-        }
-      }
-
-      return Status.OK;
-
-    } catch (Exception e) {
-      logger.error(MessageFormatter.format("Error reading key: {}", key).getMessage(), e);
-      return Status.ERROR;
     }
   }
 
