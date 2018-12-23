@@ -151,7 +151,9 @@ public class CassandraCQLClient extends DB {
 
       final long deadline = System.nanoTime() + delayNs;
       do {
-        LockSupport.parkNanos(deadline - System.nanoTime());
+        final long counter = deadline - System.nanoTime();
+        System.out.println(System.nanoTime() + " " + deadline + " " + counter);
+        LockSupport.parkNanos(counter);
       } while (System.nanoTime() < deadline && !Thread.interrupted());
     }
   }
@@ -168,6 +170,11 @@ public class CassandraCQLClient extends DB {
     partition = Float.parseFloat(getProperties().getProperty(PARTITION_DELAY, PARTITION_DELAY_DEFAULT));
 
     partitionSize = (int) Math.round(partition * opCount);
+
+    System.out.println("toDelay : " + toDelay);
+    System.out.println("randomizeDelay : " + randomizeDelay);
+    System.out.println("opCount " + opCount);
+    System.out.println("partition " + partition);
 
     // Keep track of number of calls to init (for later cleanup)
     INIT_COUNT.incrementAndGet();
