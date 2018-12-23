@@ -289,8 +289,13 @@ public class CassandraCQLClient extends DB {
   @Override
   public Status read(String table, String key, Set<String> fields, Map<String, ByteIterator> result) {
 
+    System.out.println("Request no : " + INIT_COUNT.get());
     if (INIT_COUNT.get() <= partitionSize) {
+      System.out.println("Will be delayed about " + toDelay + " nanoseconds");
       delay();
+      System.out.println("Request has been delayed!");
+    } else {
+      System.out.println("No delay for this request");
     }
 
     try {
